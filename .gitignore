@@ -1,0 +1,8 @@
+*.mid
+*.midi
+*.p
+
+raw_midi/
+ca_midi/
+.vscode/
+venv/
