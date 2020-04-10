@@ -1,6 +1,6 @@
 from music21 import converter, note, chord
 #from os.path import join
-from math import sqrt, log
+from math import sqrt, log, inf
 #import matplotlib.pyplot as plt
 
 import sys, glob
@@ -45,7 +45,7 @@ def bhattacharyya_distance(h1, h2):
     bc = 0
     for i in range(domain):
         bc += sqrt(h1[i]*h2[i])
-    return -log(bc) if bc != 0 else 1000 #ugly workaround
+    return -log(bc) if bc != 0 else inf
 
 #Given a collection of reference histograms and a target histogram, returns whichever reference histogram is closest to the target one (according to bhattacharyya distance).
 #All the histograms involved must have the same number of bins
@@ -85,18 +85,18 @@ if __name__ == "__main__":
 
         while len(measure) != 0:
             pch = [.0 for i in range(PITCH_CLASSES)]
-            for n in measure.notes:
-                if isinstance(n, note.Note): #if we encounter a single note
-                    pch[n.pitch.pitchClass] += n.duration.quarterLength
-                elif isinstance(n, chord.Chord): #if we encounter a chord
-                    for p in n.pitches:
-                        pch[p.pitchClass] += n.duration.quarterLength
-            
-            pch = normalize_histogram(pch)
-            
-            h = find_closest_histogram(chord_histograms, pch)
-            print(f'Measure {i+1}: {id_to_chord_name(h)}')
+            if len(measure.notes) > 0: # skip measures with all rests
+                for n in measure.notes:
+                    if isinstance(n, note.Note): #if we encounter a single note
+                        pch[n.pitch.pitchClass] += n.duration.quarterLength
+                    elif isinstance(n, chord.Chord): #if we encounter a chord
+                        for p in n.pitches:
+                            pch[p.pitchClass] += n.duration.quarterLength
+
+                pch = normalize_histogram(pch)
+
+                h = find_closest_histogram(chord_histograms, pch)
+                print(f'Measure {i+1}: {id_to_chord_name(h)}')
 
             i += 1
             measure = mid.measure(i).flat
-        
