@@ -74,29 +74,48 @@ if __name__ == "__main__":
     #inputs = glob.glob(join(input_dir,'Lady Gaga - Edge of Glory.mid'))
 
     for f in inputs:
-        print(f'\n=={f}==\n')
         mid = converter.parse(f)
+        print(f'\n=={f}==')
+        print('Chordifying and splitting song... (this may take a while)')
+        measures = mid.chordify(addTies=False).measures(0,-1,indicesNotNumbers=True)
+        print('Done.\n')
 
-        i = 0
-        measure = mid.measure(i).flat
-        while len(measure) == 0:    #skip leading blank measures
-            i += 1
-            measure = mid.measure(i).flat
-
-        while len(measure) != 0:
+        for i, measure in enumerate(measures):
             pch = [.0 for i in range(PITCH_CLASSES)]
-            if len(measure.notes) > 0: # skip measures with all rests
-                for n in measure.notes:
-                    if isinstance(n, note.Note): #if we encounter a single note
-                        pch[n.pitch.pitchClass] += n.duration.quarterLength
-                    elif isinstance(n, chord.Chord): #if we encounter a chord
-                        for p in n.pitches:
-                            pch[p.pitchClass] += n.duration.quarterLength
+            if len(measure.notes) > 0: # if a measure has notes
+                for c in measure.notes:
+                    for p in c.pitches:
+                        pch[p.pitchClass] += c.duration.quarterLength
 
                 pch = normalize_histogram(pch)
 
                 h = find_closest_histogram(chord_histograms, pch)
-                print(f'Measure {i+1}: {id_to_chord_name(h)}')
+                chord = id_to_chord_name(h)
+            else: # if a measure is empty
+                chord = 'No chord'
 
-            i += 1
-            measure = mid.measure(i).flat
+            print(f'Measure {i+1}: {id_to_chord_name(h)}')
+
+#        i = 0
+#        measure = mid.measure(i).flat
+#        while len(measure) == 0:    #skip leading blank measures
+#            i += 1
+#            measure = mid.measure(i).flat
+#
+#        while len(measure) != 0:
+#            pch = [.0 for i in range(PITCH_CLASSES)]
+#            if len(measure.notes) > 0: # skip measures with all rests
+#                for n in measure.notes:
+#                    if isinstance(n, note.Note): #if we encounter a single note
+#                        pch[n.pitch.pitchClass] += n.duration.quarterLength
+#                    elif isinstance(n, chord.Chord): #if we encounter a chord
+#                        for p in n.pitches:
+#                            pch[p.pitchClass] += n.duration.quarterLength
+#
+#                pch = normalize_histogram(pch)
+#
+#                h = find_closest_histogram(chord_histograms, pch)
+#                print(f'Measure {i+1}: {id_to_chord_name(h)}')
+#
+#            i += 1
+#            measure = mid.measure(i).flat
