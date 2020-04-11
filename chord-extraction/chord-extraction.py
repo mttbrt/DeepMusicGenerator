@@ -2,6 +2,7 @@ from music21 import converter, note, chord
 #from os.path import join
 from math import sqrt, log, inf
 #import matplotlib.pyplot as plt
+from itertools import accumulate 
 
 import sys, glob
 
@@ -60,7 +61,39 @@ def find_closest_histogram(chord_histograms, target_histogram):
             min_distance = distance
     return best
 
+def get_chords_progression_from_key(key, scale_type = MODES[0]):
+    # Major scale
+    if scale_type == MODES[0]:
+        pattern = [2, 2, 1, 2, 2, 2, 1]
+        progression = [MODES[0], MODES[1], MODES[1], MODES[0], MODES[0], MODES[1], 'dim']
+    # Minor scale
+    elif scale_type == MODES[1]:
+        pattern = [2, 1, 2, 2, 1, 2, 2]
+        progression = [MODES[1], 'dim', MODES[0], MODES[1], MODES[1], MODES[0], MODES[0]]
+    else:
+        print('Scale type not supported.')
+        exit(0)
 
+    indices = [(key + i) % 12 for i in accumulate(pattern)]
+    indices.insert(0, indices.pop()) # rotate: last element is moved in front of the list
+    chords = []
+    for i, fundamental in enumerate(indices):
+        # Major chord
+        if progression[i] == MODES[0]:
+            chords.append([fundamental, (fundamental + 4) % PITCH_CLASSES, (fundamental + 7) % PITCH_CLASSES])
+        # Minor chord
+        elif progression[i] == MODES[1]:
+            chords.append([fundamental, (fundamental + 3) % PITCH_CLASSES, (fundamental + 7) % PITCH_CLASSES])
+        # Diminished chord
+        else:
+            chords.append([fundamental, (fundamental + 3) % PITCH_CLASSES, (fundamental + 6) % PITCH_CLASSES])
+
+    print(f'Pitch of notes in {FUNDAMENTALS[key]} {scale_type} scale: {indices}')
+    print(f'\nChords in {FUNDAMENTALS[key]} {scale_type} scale:')
+    for i, chord in enumerate(chords):
+        print(f'Chord {FUNDAMENTALS[chord[0]]} {progression[i]}: [{FUNDAMENTALS[chord[0]]}, {FUNDAMENTALS[chord[1]]}, {FUNDAMENTALS[chord[2]]}]')
+
+    return chords
 
 if __name__ == "__main__":
     inputs = sys.argv[1:]
@@ -94,7 +127,7 @@ if __name__ == "__main__":
             else: # if a measure is empty
                 chord = 'No chord'
 
-            print(f'Measure {i+1}: {id_to_chord_name(h)}')
+            print(f'Measure {i+1}: {id_to_chord_name(chord)}')
 
 #        i = 0
 #        measure = mid.measure(i).flat
