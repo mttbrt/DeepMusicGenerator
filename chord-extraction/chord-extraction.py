@@ -1,7 +1,7 @@
 from music21 import converter, note, chord
-#from os.path import join
+from music21.stream import Stream
+from music21.instrument import UnpitchedPercussion
 from math import sqrt, log, inf
-#import matplotlib.pyplot as plt
 from itertools import accumulate 
 
 import sys, glob
@@ -107,11 +107,14 @@ if __name__ == "__main__":
     #inputs = glob.glob(join(input_dir,'Lady Gaga - Edge of Glory.mid'))
 
     for f in inputs:
-        mid = converter.parse(f)
         print(f'\n=={f}==')
+        print('Opening file...')
+        mid = converter.parse(f)
         print('Chordifying and splitting song... (this may take a while)')
         measures = mid.chordify(addTies=False).measures(0,-1,indicesNotNumbers=True)
         print('Done.\n')
+
+        measures.write(fp='debug.mid',fmt='mid') #debug
 
         for i, measure in enumerate(measures):
             pch = [.0 for i in range(PITCH_CLASSES)]
@@ -127,7 +130,7 @@ if __name__ == "__main__":
             else: # if a measure is empty
                 chord = 'No chord'
 
-            print(f'Measure {i+1}: {id_to_chord_name(chord)}')
+            print(f'Measure {i+1}: {chord}')
 
 #        i = 0
 #        measure = mid.measure(i).flat
