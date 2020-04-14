@@ -4,7 +4,7 @@ from music21.instrument import UnpitchedPercussion
 from math import sqrt, log, inf
 from itertools import accumulate 
 
-import sys, glob
+import sys, glob, pickle
 
 PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 FUNDAMENTALS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
@@ -12,10 +12,19 @@ MODES = ['major', 'minor']
 
 #Utility, given a chord id returns its common name
 def id_to_chord_name(chord_id):
+    if chord_id == None:
+        return 'No chord'
     if chord_id > 23:
         return 'Unknown chord'
     m, f = divmod(chord_id, PITCH_CLASSES)
     return f'{FUNDAMENTALS[f]} {MODES[m]}'
+
+#Returns whether a histogram is empty (a.k.a. uninitialized)
+def histogram_is_empty(histogram):
+    for bin in histogram:
+        if bin > 0:
+            return False
+    return True
 
 #Returns a normalized version of the input histogram
 def normalize_histogram(histogram):
@@ -100,58 +109,46 @@ if __name__ == "__main__":
     if len(inputs) == 0:
         print('\nUsage: python3 chord-extraction.py <file1> [<file2> ...]\n')
         exit(0)
+    elif len(inputs) == 1:
+        inputs = glob.glob(inputs[0])
 
     chord_histograms = make_chord_histograms()
+    output_sequences = []
 
-    #input_dir = join('raw_midi')
-    #inputs = glob.glob(join(input_dir,'Lady Gaga - Edge of Glory.mid'))
+    num_of_files = len(inputs)
 
-    for f in inputs:
-        print(f'\n=={f}==')
+    for i,f in enumerate(inputs):
+        print(f'\n({i+1}/{num_of_files}):{f}')
         print('Opening file...')
         mid = converter.parse(f)
-        print('Chordifying and splitting song... (this may take a while)')
+        print('Preprocessing song... (this may take a while)')
+        indesiderata = [element for element in mid.recurse(classFilter=('Instrument','MetronomeMark'))]
+        #instruments = [instrument for instrument in mid.getInstruments(recurse=True)]
+        mid.remove(indesiderata, recurse=True)
+
         measures = mid.chordify(addTies=False).measures(0,-1,indicesNotNumbers=True)
         print('Done.\n')
 
-        measures.write(fp='debug.mid',fmt='mid') #debug
+        #measures.write(fp='debug.mid',fmt='mid') #debug
+     
+
+        output_sequence = []
 
         for i, measure in enumerate(measures):
-            pch = [.0 for i in range(PITCH_CLASSES)]
-            if len(measure.notes) > 0: # if a measure has notes
-                for c in measure.notes:
-                    for p in c.pitches:
-                        pch[p.pitchClass] += c.duration.quarterLength
+            pch = [.0 for _ in range(PITCH_CLASSES)]
+            for c in measure.notes:
+                for p in c.pitches:
+                    pch[p.pitchClass] += c.duration.quarterLength
 
+            if histogram_is_empty(pch):
+                chord = None
+            else:
                 pch = normalize_histogram(pch)
+                chord = find_closest_histogram(chord_histograms, pch)
 
-                h = find_closest_histogram(chord_histograms, pch)
-                chord = id_to_chord_name(h)
-            else: # if a measure is empty
-                chord = 'No chord'
+            output_sequence.append(chord)
+            print(f'Measure {i+1}: {id_to_chord_name(chord)}')
 
-            print(f'Measure {i+1}: {chord}')
+        output_sequences.append(output_sequence)
 
-#        i = 0
-#        measure = mid.measure(i).flat
-#        while len(measure) == 0:    #skip leading blank measures
-#            i += 1
-#            measure = mid.measure(i).flat
-#
-#        while len(measure) != 0:
-#            pch = [.0 for i in range(PITCH_CLASSES)]
-#            if len(measure.notes) > 0: # skip measures with all rests
-#                for n in measure.notes:
-#                    if isinstance(n, note.Note): #if we encounter a single note
-#                        pch[n.pitch.pitchClass] += n.duration.quarterLength
-#                    elif isinstance(n, chord.Chord): #if we encounter a chord
-#                        for p in n.pitches:
-#                            pch[p.pitchClass] += n.duration.quarterLength
-#
-#                pch = normalize_histogram(pch)
-#
-#                h = find_closest_histogram(chord_histograms, pch)
-#                print(f'Measure {i+1}: {id_to_chord_name(h)}')
-#
-#            i += 1
-#            measure = mid.measure(i).flat
+    pickle.dump( output_sequences, open( "output_sequences.p", "wb" ) )
