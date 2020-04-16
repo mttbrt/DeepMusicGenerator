@@ -6,16 +6,19 @@ from itertools import accumulate
 
 import os, sys, glob, pickle
 
+CHORD_CLASSES = 24+1 #12 major chords, 12 minor chords and "no chord"
+NO_CHORD = 24 
+
 PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 FUNDAMENTALS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 MODES = ['major', 'minor']
 
 #Utility, given a chord id returns its common name
 def id_to_chord_name(chord_id):
-    if chord_id == None:
-        return 'No chord'
-    if chord_id > 23:
+    if chord_id >= CHORD_CLASSES:
         return 'Unknown chord'
+    if chord_id == NO_CHORD:
+        return 'No chord'
     m, f = divmod(chord_id, PITCH_CLASSES)
     return f'{FUNDAMENTALS[f]} {MODES[m]}'
 
@@ -154,7 +157,7 @@ if __name__ == "__main__":
                     pch[p.pitchClass] += c.duration.quarterLength
 
             if histogram_is_empty(pch):
-                chord = None
+                chord = NO_CHORD
             else:
                 pch = normalize_histogram(pch)
                 chord = find_closest_histogram(chord_histograms, pch)
