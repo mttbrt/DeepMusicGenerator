@@ -2,9 +2,9 @@ from music21 import converter, note, chord
 from music21.stream import Stream
 from music21.instrument import UnpitchedPercussion
 from math import sqrt, log, inf
-from itertools import accumulate 
+from itertools import accumulate
 
-import sys, glob, pickle
+import os, sys, glob, pickle
 
 PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 FUNDAMENTALS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
@@ -115,9 +115,22 @@ if __name__ == "__main__":
     chord_histograms = make_chord_histograms()
     output_sequences = []
 
-    num_of_files = len(inputs)
+    # make a list with all midi files in directories (if any) passed as input
+    files = []
+    for input in inputs:
+        if os.path.isfile(input) and (input.lower().endswith('.mid') or input.lower().endswith('.midi')):
+            files.append(input)
+        elif os.path.isdir(input):
+            for (dirpath, dirnames, filenames) in os.walk(input):
+                for file in filenames:
+                    if file.lower().endswith('.mid') or file.lower().endswith('.midi'):
+                        files.append(os.path.join(dirpath, file))
+        else:
+            print(f'Warning: {input} is neither a midi file nor a directory.')
 
-    for i,f in enumerate(inputs):
+    num_of_files = len(files)
+
+    for i,f in enumerate(files):
         print(f'\n({i+1}/{num_of_files}):{f}')
         print('Opening file...')
         mid = converter.parse(f)
@@ -130,7 +143,7 @@ if __name__ == "__main__":
         print('Done.\n')
 
         #measures.write(fp='debug.mid',fmt='mid') #debug
-     
+
 
         output_sequence = []
 
