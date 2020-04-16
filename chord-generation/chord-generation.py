@@ -3,7 +3,7 @@ from keras.models import Sequential
 from keras.layers import Embedding
 from keras.layers import LSTM
 from keras.layers import Dense, Activation
-from keras.optimizers import Adam
+from keras.optimizers import Adam, RMSprop
 from keras.utils import np_utils
 from random import shuffle
 import numpy as np
@@ -16,8 +16,8 @@ CHORD_CLASSES = 24+1 #12 major chords, 12 minor chords, and "no chord"
 CHORD_EMBEDDING = 3
 STEP_SIZE = 1
 BATCH_SIZE = 1
-HIDDEN_LAYERS = 512
-LEARNING_RATE = 0.00001
+HIDDEN_UNITS = 512
+LEARNING_RATE = 0.01
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
 
@@ -37,10 +37,10 @@ def init_model():
     global model
     model = Sequential()
     model.add(Embedding(CHORD_CLASSES, CHORD_EMBEDDING, input_length = STEP_SIZE, batch_input_shape=(BATCH_SIZE, STEP_SIZE)))
-    model.add(LSTM(HIDDEN_LAYERS, stateful = True))
+    model.add(LSTM(HIDDEN_UNITS, stateful = False))
     model.add(Dense(CHORD_CLASSES))
     model.add(Activation(ACTIVATION))
-    model.compile(Adam(lr = LEARNING_RATE), LOSS)
+    model.compile(RMSprop(learning_rate=LEARNING_RATE), LOSS)
 
 # Splits the dataset in two subsets: the training set contains the {percentage} of
 # files, the testing set contains the 1 - {percentage} of files
@@ -50,25 +50,6 @@ def split_dataset(percentage):
     dataset_len = len(dataset)
     return dataset[:int(dataset_len*percentage)], dataset[int(dataset_len*percentage):]
 
-def test_model(test_set):
-    print('Testing...')
-    tot_test_loss = 0
-    for i, song in enumerate(test_set):
-        # [improvement] TODO: use CHORD_CLASSES-1 instead of None for "no chord" during preprocessing
-        for j, chord in enumerate(song):
-            if not chord:
-                song[j] = CHORD_CLASSES - 1
-
-        X = song
-        Y = np_utils.to_categorical(X, num_classes = CHORD_CLASSES) # one-hot encode chords
-        loss = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
-        model.reset_states()
-
-        tot_test_loss += loss
-        print(f'\tSong {i}: test loss {loss}')
-
-    print(f'\tTEST MEAN LOSS: {tot_test_loss/len(test_set)}')
-
 # TODO: solve 'UserWarning: Converting sparse IndexedSlices to a dense Tensor'
 def train_model(train_set, test_set):
     print('Training...')
@@ -77,10 +58,11 @@ def train_model(train_set, test_set):
         tot_epoch_loss = 0
         for i, song in enumerate(train_set):
             # [improvement] TODO: use CHORD_CLASSES-1 instead of None for "no chord" during preprocessing
-            for j, chord in enumerate(song):
-                if not chord:
-                    song[j] = CHORD_CLASSES-1
+            #for j, chord in enumerate(song):
+            #    if not chord:
+            #        song[j] = CHORD_CLASSES-1
 
+            #TODO: this does not seem right for X and Y
             X = song
             Y = np_utils.to_categorical(X, num_classes = CHORD_CLASSES) # one-hot encode chords
             h = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
@@ -98,6 +80,25 @@ def train_model(train_set, test_set):
         if not os.path.exists('model_backups'):
             os.makedirs('model_backups')
         model.save('model_backups/epoch_' + str(e) + '.pickle')
+
+def test_model(test_set):
+    print('Testing...')
+    tot_test_loss = 0
+    for i, song in enumerate(test_set):
+        # [improvement] TODO: use CHORD_CLASSES-1 instead of None for "no chord" during preprocessing
+        #for j, chord in enumerate(song):
+        #    if not chord:
+        #        song[j] = CHORD_CLASSES - 1
+
+        X = song
+        Y = np_utils.to_categorical(X, num_classes = CHORD_CLASSES) # one-hot encode chords
+        loss = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
+        model.reset_states()
+
+        tot_test_loss += loss
+        print(f'\tSong {i}: test loss {loss}')
+
+    print(f'\tTEST MEAN LOSS: {tot_test_loss/len(test_set)}')
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:

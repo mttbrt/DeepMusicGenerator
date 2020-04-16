@@ -1,6 +1,7 @@
 *.mid
 *.midi
 *.p
+*.pickle
 
 raw_midi/
 ca_midi/
