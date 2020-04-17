@@ -5,6 +5,7 @@ from keras.layers import LSTM
 from keras.layers import Dense, Activation
 from keras.optimizers import Adam, RMSprop
 from keras.utils import np_utils
+from keras.preprocessing.sequence import pad_sequences
 from random import shuffle
 import numpy as np
 
@@ -13,17 +14,16 @@ import os, sys, pickle
 CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
 # Model constants
-EMBEDDING_SIZE = 10 # size of embedding vector
-TIME_STEPS = 1 # LSTM length, number of cells, ...
+EMBEDDING_SIZE = 6 # size of embedding vector
+CHORDS_BLOCK = 4 # how many chords pass to the network every time
 BATCH_SIZE = 1 # how many sequences to process in parallel (> 1 for polyphonic generation)
-HIDDEN_UNITS = 512 # number of LSTM cells
-LEARNING_RATE = 0.00001
+HIDDEN_UNITS = 128 # number of LSTM cells
+LEARNING_RATE = 0.0001
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
 
 # Training constants
-EPOCHS = 2
-BLOCK_SIZE = 16 # given a set of 16 chords, predict the forward slided set of 16 elements
+EPOCHS = 32
 
 dataset = None
 model = None
@@ -37,8 +37,8 @@ model = None
 def init_model():
     global model
     model = Sequential()
-    model.add(Embedding(input_dim = CHORD_CLASSES, output_dim = EMBEDDING_SIZE, input_length = TIME_STEPS, batch_input_shape = (BATCH_SIZE, TIME_STEPS)))
-    model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, TIME_STEPS, EMBEDDING_SIZE), return_sequences = False, stateful = True))
+    model.add(Embedding(input_dim = CHORD_CLASSES, output_dim = EMBEDDING_SIZE, input_length = CHORDS_BLOCK, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK)))
+    model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE), return_sequences = False, stateful = True))
     model.add(Dense(CHORD_CLASSES))
     model.add(Activation(ACTIVATION))
     model.compile(RMSprop(learning_rate = LEARNING_RATE), LOSS)
@@ -58,18 +58,22 @@ def train_model(train_set, test_set):
         tot_epoch_loss = 0
         shuffle(train_set)
         for j, song in enumerate(train_set):
-            tot_song_loss = 0
-            sliding_windows = len(song) - BLOCK_SIZE - 1
-            # iteration through sliding window
-            for i in range(sliding_windows):
-                X = song[i : i+BLOCK_SIZE]
-                Y = np_utils.to_categorical(song[i+1 : i+BLOCK_SIZE+1], num_classes = CHORD_CLASSES) # one-hot encode chords
-                stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
-                tot_song_loss += stats.history['loss'][0]
-                model.reset_states()
+            # preprocessing: song is split in multiple sliding windows of CHORDS_BLOCK elements
+            xdata = []
+            ydata = []
+            for i in range(len(song) - CHORDS_BLOCK - 1):
+                xdata.append(song[i:i+CHORDS_BLOCK])
+                ydata.append(song[i+CHORDS_BLOCK])
+            xdata = pad_sequences(xdata, maxlen=CHORDS_BLOCK)
 
-            print(f'\tSong {j}/{len(train_set)}: mean train loss {tot_song_loss/sliding_windows}')
-            tot_epoch_loss += tot_song_loss/sliding_windows
+            X = np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK))
+            Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+            stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
+            song_loss = stats.history['loss'][0]
+            model.reset_states()
+
+            print(f'\tSong {j}/{len(train_set)}: train loss {song_loss}')
+            tot_epoch_loss += song_loss
 
         print(f'\tTRAIN MEAN LOSS: {tot_epoch_loss/len(train_set)}')
 
@@ -85,17 +89,21 @@ def test_model(test_set):
     tot_test_loss = 0
     shuffle(test_set)
     for j, song in enumerate(test_set):
-        tot_song_loss = 0
-        sliding_windows = len(song) - BLOCK_SIZE - 1
-        # iteration through sliding window
-        for i in range(sliding_windows):
-            X = song[i : i+BLOCK_SIZE]
-            Y = np_utils.to_categorical(song[i+1 : i+BLOCK_SIZE+1], num_classes = CHORD_CLASSES) # one-hot encode chords
-            tot_song_loss += model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
-            model.reset_states()
+        # preprocessing: song is split in multiple sliding windows of CHORDS_BLOCK elements
+        xdata = []
+        ydata = []
+        for i in range(len(song) - CHORDS_BLOCK - 1):
+            xdata.append(song[i:i+CHORDS_BLOCK])
+            ydata.append(song[i+CHORDS_BLOCK])
+        xdata = pad_sequences(xdata, maxlen=CHORDS_BLOCK)
 
-        print(f'\tSong {j}/{len(test_set)}: test loss {tot_song_loss/sliding_windows}')
-        tot_test_loss += tot_song_loss/sliding_windows
+        X = np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK))
+        Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        song_loss = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
+        model.reset_states()
+
+        print(f'\tSong {j}/{len(test_set)}: train loss {song_loss}')
+        tot_test_loss += song_loss
 
     print(f'\tTEST MEAN LOSS: {tot_test_loss/len(test_set)}')
 
@@ -109,13 +117,16 @@ if __name__ == '__main__':
     dataset = pickle.load(open(input_file, 'rb'))
 
     # Build and train model
-    # init_model()
-    # train_set, test_set = split_dataset(0.8)
-    # train_model(train_set, test_set)
+    init_model()
+    train_set, test_set = split_dataset(0.8)
+    train_model(train_set, test_set)
 
     # Debugging
     # model = load_model(f'model_backups/epoch_{EPOCHS}.pickle')
     # CHORDS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'Abm', 'Am', 'Bbm', 'Bm', 'NO CHORD']
-    # for i in [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23]:
-    #     predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in model.predict([i])][0][0]
-    #     print(f'Given {CHORDS[i]} predicted {CHORDS[predicted_chord]}')
+    # for chord_sequence in [[3, 5, 6, 8], [7, 9, 11, 12]]: # C# (C#, Eb, F, F#, Ab, Bb, C) and Fm (F, G, Ab, Bb, C, C#, Eb)
+    #     input_seq = pad_sequences([chord_sequence], maxlen=CHORDS_BLOCK)
+    #     input_data = np.reshape(input_seq, (input_seq.shape[0], CHORDS_BLOCK))
+    #     prediction = model.predict(input_data)
+    #     predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in prediction][0][0]
+    #     print(f'Given {chord_sequence} predicted {predicted_chord}({CHORDS[predicted_chord]})')
