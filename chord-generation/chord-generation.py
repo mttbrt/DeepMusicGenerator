@@ -18,7 +18,7 @@ EMBEDDING = False
 EMBEDDING_SIZE = 6 if EMBEDDING else 1 # size of embedding vector
 CHORDS_BLOCK = 4 # how many chords pass to the network every time
 BATCH_SIZE = 1 # how many sequences to process in parallel (> 1 for polyphonic generation)
-HIDDEN_UNITS = 128 # number of LSTM cells
+HIDDEN_UNITS = 12 # number of LSTM cells - formula: N_h = N_s / (alpha * (N_i + N_o))
 LEARNING_RATE = 0.001
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
@@ -50,9 +50,66 @@ def split_dataset(percentage):
     dataset_len = len(dataset)
     return dataset[:int(dataset_len*percentage)], dataset[int(dataset_len*percentage):]
 
-def train_model(train_set, test_set):
+# Training with one step ahead cross validation
+def train_model_cv():
     print('Training...')
 
+    total_chord_blocks_in_dataset = sum(len(s) - CHORDS_BLOCK - 1 for s in dataset)
+
+    # training_set_size: number of chord blocks to train the NN on
+    for training_set_size in range(1, total_chord_blocks_in_dataset):
+        print(f'\n{training_set_size}/{total_chord_blocks_in_dataset}')
+        # Preprocessing: get chord blocks in a sequential way keeping the dataset matrix form
+        xdata = []
+        ydata = []
+        current_training_set_size = len(xdata) # number of current chord blocks in the training set
+        song_iter = 0 # iterate through songs in dataset
+
+        # I get 1 more chord block to test the model
+        while current_training_set_size < training_set_size + 1:
+            song = dataset[song_iter]
+            max_chord_blocks_in_song = len(song) - CHORDS_BLOCK - 1
+
+            for i in range(min(max_chord_blocks_in_song, (training_set_size + 1) - current_training_set_size)):
+                xdata.append(song[i:i+CHORDS_BLOCK])
+                ydata.append(song[i+CHORDS_BLOCK])
+
+            current_training_set_size += len(xdata)
+            song_iter += 1
+
+        xdata = np.array(xdata[:-1]) # remove last chord block for training (it is for testing)
+        ydata = np.array(ydata[:-1]) # remove last chord block for training (it is for testing)
+
+        X = xdata if EMBEDDING else np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK, 1))
+        Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
+        model.reset_states()
+
+        acc = stats.history['acc'][0]
+        loss = stats.history['loss'][0]
+        mae = stats.history['mae'][0]
+        print(f'TRAINING - ACCURACY: {acc} | LOSS: {loss} | MAE: {mae}')
+
+        # Test and backup model every 10 iterations
+        txdata = np.array([xdata[-1]]) # the last chord block was for testing
+        tydata = np.array([ydata[-1]]) # the last chord block was for testing
+        X = txdata if EMBEDDING else np.reshape(txdata, (txdata.shape[0], CHORDS_BLOCK, 1))
+        Y = np_utils.to_categorical(tydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        tstats = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
+        print(f'TESTING - ACCURACY: {tstats[0]} | LOSS: {tstats[1]} | MAE: {tstats[2]}')
+
+        if training_set_size % 10 == 0:
+            if not os.path.exists('model_backups'):
+                os.makedirs('model_backups')
+            model.save('model_backups/iter_' + str(training_set_size) + '.pickle')
+
+    # save last configuration
+    model.save('model_backups/iter_' + str(training_set_size) + '.pickle')
+
+def train_model():
+    print('Training...')
+
+    train_set, test_set = split_dataset(0.8)
     for e in range(1, EPOCHS + 1):
         print(f'\nEpoch {e}/{EPOCHS}')
         tot_epoch_loss = 0
@@ -135,6 +192,22 @@ def performance_eval(test_sequences):
             str_pred += str(chord_sequence[i])
         print(f'Expected predictions: {transition_matrix[str_pred]}\n')
 
+def compose_song(first_chords, num_predictions):
+    model = load_model(f'model_backups/iter_2500.pickle')
+
+    tot_chords = first_chords
+    for i in range(num_predictions):
+        last_chords = np.array([tot_chords[-4:]])
+        data = last_chords if EMBEDDING else np.reshape(last_chords, (last_chords.shape[0], CHORDS_BLOCK, 1))
+        prediction = model.predict(data)
+        predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in prediction][0][0]
+        tot_chords.append(predicted_chord)
+
+    CHORDS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'Abm', 'Am', 'Bbm', 'Bm', 'No Chord']
+    for chord in tot_chords:
+        print(CHORDS[chord], end = ' ')
+    print()
+
 def compute_transition_matrix():
     # group all possible sequences of 4 elements and save their prediction
     global transition_matrix
@@ -202,9 +275,10 @@ if __name__ == '__main__':
         exit(0)
 
     # Build and train model
-    init_model()
-    train_set, test_set = split_dataset(0.8)
-    train_model(train_set, test_set)
+    # init_model()
+    # train_model_cv()
+    # train_model()
 
     # Model evaluation
     # performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
+    compose_song([7, 2, 21, 0], 16)
