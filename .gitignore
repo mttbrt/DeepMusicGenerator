@@ -2,6 +2,7 @@
 *.midi
 *.p
 *.pickle
+*.h5
 
 raw_midi/
 ca_midi/

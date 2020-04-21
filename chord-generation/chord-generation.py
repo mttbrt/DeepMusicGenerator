@@ -1,11 +1,10 @@
-#from keras import sequential
-from keras.models import Sequential, load_model
-from keras.layers import Embedding
-from keras.layers import LSTM
-from keras.layers import Dense, Activation
-from keras.optimizers import Adam, RMSprop, Adadelta
-from keras.utils import np_utils
-from keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Embedding
+from tensorflow.keras.layers import LSTM
+from tensorflow.keras.layers import Dense, Activation
+from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta
+from tensorflow.keras import utils
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from random import shuffle
 import numpy as np
 
@@ -22,7 +21,7 @@ HIDDEN_UNITS = 12 # number of LSTM cells - formula: N_h = N_s / (alpha * (N_i + 
 LEARNING_RATE = 0.001
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
-OPTIMIZER = 'adadelta'
+OPTIMIZER = 'rmsprop'
 
 # Training constants
 EPOCHS = 256
@@ -33,10 +32,20 @@ transition_matrix = {}
 
 def init_model():
     global model
-    model = Sequential(name = 'LSTM Chord Generator')
+    model = Sequential(name = 'lstm-chord-generator')
     if EMBEDDING:
         model.add(Embedding(input_dim = CHORD_CLASSES, output_dim = EMBEDDING_SIZE, input_length = CHORDS_BLOCK, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK), name='Embedding'))
-    model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE), return_sequences = False, stateful = True, name='LSTM'))
+    #model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE), return_sequences = False, stateful = True, name='LSTM'))
+    model.add(LSTM(HIDDEN_UNITS,
+        activation='tanh',
+        recurrent_activation='sigmoid',
+        recurrent_dropout=0,
+        unroll=False,
+        use_bias=True,
+        batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE),
+        return_sequences = False,
+        stateful = True,
+        name='LSTM'))
     model.add(Dense(CHORD_CLASSES, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
     model.compile(optimizer=OPTIMIZER, loss=LOSS, metrics=['acc', 'mae'])
 
@@ -81,7 +90,7 @@ def train_model_cv():
         ydata = np.array(ydata[:-1]) # remove last chord block for training (it is for testing)
 
         X = xdata if EMBEDDING else np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK, 1))
-        Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        Y = utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
         stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
         model.reset_states()
 
@@ -94,17 +103,17 @@ def train_model_cv():
         txdata = np.array([xdata[-1]]) # the last chord block was for testing
         tydata = np.array([ydata[-1]]) # the last chord block was for testing
         X = txdata if EMBEDDING else np.reshape(txdata, (txdata.shape[0], CHORDS_BLOCK, 1))
-        Y = np_utils.to_categorical(tydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        Y = utils.to_categorical(tydata, num_classes = CHORD_CLASSES) # one-hot encode chords
         tstats = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
         print(f'TESTING - ACCURACY: {tstats[0]} | LOSS: {tstats[1]} | MAE: {tstats[2]}')
 
         if training_set_size % 10 == 0:
             if not os.path.exists('model_backups'):
                 os.makedirs('model_backups')
-            model.save('model_backups/iter_' + str(training_set_size) + '.pickle')
+            model.save('model_backups/iter_' + str(training_set_size) + '.h5')
 
     # save last configuration
-    model.save('model_backups/iter_' + str(training_set_size) + '.pickle')
+    model.save('model_backups/iter_' + str(training_set_size) + '.h5')
 
 def train_model():
     print('Training...')
@@ -128,7 +137,7 @@ def train_model():
             xdata = np.array(xdata)
 
             X = xdata if EMBEDDING else np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK, 1))
-            Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+            Y = utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
             stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
             model.reset_states()
             prog_bar.update(j+1)
@@ -165,7 +174,7 @@ def test_model(test_set):
         xdata = np.array(xdata)
 
         X = xdata if EMBEDDING else np.reshape(xdata, (xdata.shape[0], CHORDS_BLOCK, 1))
-        Y = np_utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
+        Y = utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
         stats = model.evaluate(X, Y, batch_size = BATCH_SIZE, verbose = False)
         model.reset_states()
         prog_bar.update(j+1)
@@ -274,11 +283,11 @@ if __name__ == '__main__':
         print('Type \'python chord-generation.py -h\' to get more information.')
         exit(0)
 
-    # Build and train model
-    # init_model()
-    # train_model_cv()
-    # train_model()
+    #Build and train model
+    init_model()
+    train_model_cv()
+    train_model()
 
-    # Model evaluation
-    # performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
-    compose_song([7, 2, 21, 0], 16)
+    #Model evaluation
+    performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
+    #compose_song([7, 2, 21, 0], 16)
