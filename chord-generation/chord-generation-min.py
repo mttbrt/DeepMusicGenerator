@@ -21,7 +21,7 @@ def one_hot_encode_chord(chord_id):
 def init_model(chord_block_size):
     global model
     model = Sequential(name = 'lstm-chord-generator')
-    model.add(LSTM(64, input_shape = (chord_block_size, CHORD_CLASSES), name='LSTM1'))
+    model.add(LSTM(256, dropout=0.1, input_shape = (chord_block_size, CHORD_CLASSES), name='LSTM1'))
     model.add(Dense(CHORD_CLASSES, activation='softmax'))
 
     optimizer = RMSprop(learning_rate=0.01)
@@ -43,7 +43,7 @@ def preprocess(dataset, chord_block_size):
     X = []
     Y = []
     for sequence in one_hot_encoded_dataset:
-        for i in range(len(sequence) - (chord_block_size + 1)):
+        for i in range(1, len(sequence) - (chord_block_size + 1)):
             X.append(sequence[i:i+chord_block_size])
             Y.append(sequence[i+chord_block_size])
     X = np.array(X)
@@ -75,14 +75,15 @@ def split_validation(X, Y, split):
 
 def make_song(model, seed, length):
     song = seed
-    window = song[-4:]
+    block_length = len(seed)
+    window = song[-block_length:]
 
     for i in range(length):
         sample = np.array([[one_hot_encode_chord(chord) for chord in window]])
         new_chord = model.predict_classes(sample)[0]
         
         song.append(new_chord)
-        window = song[-4:]
+        window = song[-block_length:]
 
     return song
 
