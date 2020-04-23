@@ -6,9 +6,10 @@ from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta
 from tensorflow.keras import utils
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from random import shuffle
-import numpy as np
 
+import numpy as np
 import os, sys, argparse, pickle, random
+import matplotlib.pyplot as plt
 
 CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
@@ -72,45 +73,18 @@ def split_validation(X, Y, split):
     return X_train, Y_train, X_val, Y_val
 
 
-def train_model():
-    print('Training...')
+def make_song(model, seed, length):
+    song = seed
+    window = song[-4:]
 
-    train_set, test_set = split_dataset(0.8)
-    for e in range(1, EPOCHS + 1):
-        print(f'\nEpoch {e}/{EPOCHS}')
-        tot_epoch_loss = 0
-        tot_epoch_acc = 0
-        tot_epoch_mae = 0
+    for i in range(length):
+        sample = np.array([[one_hot_encode_chord(chord) for chord in window]])
+        new_chord = model.predict_classes(sample)[0]
+        
+        song.append(new_chord)
+        window = song[-4:]
 
-        shuffle(train_set)
-        prog_bar = progressbar.ProgressBar(maxval=len(train_set))
-        for j, song in enumerate(train_set):
-            # preprocessing: song is split in multiple sliding windows of {chord_block_size} elements
-            xdata = []
-            ydata = []
-            for i in range(len(song) - chord_block_size - 1):
-                xdata.append(song[i:i+chord_block_size])
-                ydata.append(song[i+chord_block_size])
-            xdata = np.array(xdata)
-
-            X = xdata if EMBEDDING else np.reshape(xdata, (xdata.shape[0], chord_block_size, 1))
-            Y = utils.to_categorical(ydata, num_classes = CHORD_CLASSES) # one-hot encode chords
-            stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
-            model.reset_states()
-            prog_bar.update(j+1)
-
-            tot_epoch_loss += stats.history['loss'][0]
-            tot_epoch_acc += stats.history['acc'][0]
-            tot_epoch_mae += stats.history['mae'][0]
-
-        print(f'\nACCURACY: {tot_epoch_acc/len(train_set)} | LOSS: {tot_epoch_loss/len(train_set)} | MAE: {tot_epoch_mae/len(train_set)}')
-
-        # Test and backup model every epoch
-        test_model(test_set)
-
-        if not os.path.exists('model_backups'):
-            os.makedirs('model_backups')
-        model.save('model_backups/epoch_' + str(e) + '.pickle')
+    return song
 
 
 if __name__ == '__main__':
@@ -149,3 +123,24 @@ if __name__ == '__main__':
     print(f'{len(X)} points available')
 
     history = model.fit(X_train, Y_train, batch_size=32, epochs=args.epochs, validation_data=(X_val, Y_val))
+
+    # Plot training & validation accuracy values
+    plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
+    plt.title('Model accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Test'], loc='upper left')
+    plt.show()
+
+    # Plot training & validation loss values
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('Model loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Test'], loc='upper left')
+    plt.show()
+
+    song = make_song(model, [21, 7, 0, 5], 100)
+    print(song)
