@@ -8,3 +8,5 @@ raw_midi/
 ca_midi/
 .vscode/
 venv/
+**/training_checkpoints
+**/model_backups
