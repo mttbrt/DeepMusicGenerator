@@ -8,7 +8,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from random import shuffle
 import numpy as np
 
-import os, sys, argparse, pickle, progressbar
+import re, os, sys, argparse, pickle, progressbar
 
 CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
@@ -24,30 +24,43 @@ LOSS = 'categorical_crossentropy'
 OPTIMIZER = 'rmsprop'
 
 # Training constants
+START_EPOCH = 0
 EPOCHS = 256
 
 dataset = None
 model = None
 transition_matrix = {}
 
-def init_model():
+# for human sorting
+def natural_keys(text):
+    return [ (int(c) if c.isdigit() else c) for c in re.split(r'(\d+)', text) ]
+
+# If load_last is True than load the last model trained in 'model_backups'
+def init_model(load_last=False):
     global model
-    model = Sequential(name = 'lstm-chord-generator')
-    if EMBEDDING:
-        model.add(Embedding(input_dim = CHORD_CLASSES, output_dim = EMBEDDING_SIZE, input_length = CHORDS_BLOCK, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK), name='Embedding'))
-    #model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE), return_sequences = False, stateful = True, name='LSTM'))
-    model.add(LSTM(HIDDEN_UNITS,
-        activation='tanh',
-        recurrent_activation='sigmoid',
-        recurrent_dropout=0,
-        unroll=False,
-        use_bias=True,
-        batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE),
-        return_sequences = False,
-        stateful = True,
-        name='LSTM'))
-    model.add(Dense(CHORD_CLASSES, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
-    model.compile(optimizer=OPTIMIZER, loss=LOSS, metrics=['acc', 'mae'])
+    if load_last:
+        last_backup = sorted(os.listdir('model_backups'), key=natural_keys)[-1]
+        model = load_model(os.path.join('model_backups', last_backup))
+
+        global START_EPOCH
+        START_EPOCH = int(re.search('_(.+?)\.', last_backup).group(1))
+    else:
+        model = Sequential(name = 'lstm-chord-generator')
+        if EMBEDDING:
+            model.add(Embedding(input_dim = CHORD_CLASSES, output_dim = EMBEDDING_SIZE, input_length = CHORDS_BLOCK, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK), name='Embedding'))
+        #model.add(LSTM(HIDDEN_UNITS, batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE), return_sequences = False, stateful = True, name='LSTM'))
+        model.add(LSTM(HIDDEN_UNITS,
+            activation='tanh',
+            recurrent_activation='sigmoid',
+            recurrent_dropout=0,
+            unroll=False,
+            use_bias=True,
+            batch_input_shape = (BATCH_SIZE, CHORDS_BLOCK, EMBEDDING_SIZE),
+            return_sequences = False,
+            stateful = True,
+            name='LSTM'))
+        model.add(Dense(CHORD_CLASSES, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
+        model.compile(optimizer=OPTIMIZER, loss=LOSS, metrics=['acc', 'mae'])
 
     print(model.summary())
 
@@ -66,7 +79,7 @@ def train_model_cv():
     total_chord_blocks_in_dataset = sum(len(s) - CHORDS_BLOCK - 1 for s in dataset)
 
     # training_set_size: number of chord blocks to train the NN on
-    for training_set_size in range(1, total_chord_blocks_in_dataset):
+    for training_set_size in range(START_EPOCH + 1, total_chord_blocks_in_dataset):
         print(f'\n{training_set_size}/{total_chord_blocks_in_dataset}')
         # Preprocessing: get chord blocks in a sequential way keeping the dataset matrix form
         xdata = []
@@ -110,16 +123,16 @@ def train_model_cv():
         if training_set_size % 10 == 0:
             if not os.path.exists('model_backups'):
                 os.makedirs('model_backups')
-            model.save('model_backups/iter_' + str(training_set_size) + '.h5')
+            model.save(os.path.join('model_backups', 'iter_' + str(training_set_size) + '.h5'))
 
     # save last configuration
-    model.save('model_backups/iter_' + str(training_set_size) + '.h5')
+    model.save(os.path.join('model_backups', 'iter_' + str(training_set_size) + '.h5'))
 
 def train_model():
     print('Training...')
 
     train_set, test_set = split_dataset(0.8)
-    for e in range(1, EPOCHS + 1):
+    for e in range(START_EPOCH + 1, EPOCHS + 1):
         print(f'\nEpoch {e}/{EPOCHS}')
         tot_epoch_loss = 0
         tot_epoch_acc = 0
@@ -153,7 +166,7 @@ def train_model():
 
         if not os.path.exists('model_backups'):
             os.makedirs('model_backups')
-        model.save('model_backups/epoch_' + str(e) + '.pickle')
+        model.save(os.path.join('model_backups', 'epoch_' + str(e) + '.h5'))
 
 def test_model(test_set):
     print('Testing...')
@@ -187,7 +200,8 @@ def test_model(test_set):
 
 def performance_eval(test_sequences):
     compute_transition_matrix()
-    model = load_model(f'model_backups/epoch_{EPOCHS}.pickle')
+    last_backup = sorted(os.listdir('model_backups'), key=natural_keys)[-1]
+    model = load_model(os.path.join('model_backups', last_backup))
 
     for chord_sequence in test_sequences:
         sequence = np.array([chord_sequence])
@@ -202,7 +216,8 @@ def performance_eval(test_sequences):
         print(f'Expected predictions: {transition_matrix[str_pred]}\n')
 
 def compose_song(first_chords, num_predictions):
-    model = load_model(f'model_backups/iter_2500.pickle')
+    last_backup = sorted(os.listdir('model_backups'), key=natural_keys)[-1]
+    model = load_model(os.path.join('model_backups', last_backup))
 
     tot_chords = first_chords
     for i in range(num_predictions):
@@ -284,10 +299,10 @@ if __name__ == '__main__':
         exit(0)
 
     #Build and train model
-    init_model()
-    train_model_cv()
+    init_model(load_last=True)
+    # train_model_cv()
     train_model()
 
     #Model evaluation
     performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
-    #compose_song([7, 2, 21, 0], 16)
+    compose_song([7, 2, 21, 0], 16)
