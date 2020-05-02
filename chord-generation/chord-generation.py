@@ -1,11 +1,10 @@
 from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Embedding
-from tensorflow.keras.layers import LSTM
-from tensorflow.keras.layers import Dense, Activation
+from tensorflow.keras.layers import Embedding, LSTM, Dropout, Dense, Activation
 from tensorflow.keras.optimizers import Adam, RMSprop, Adadelta
 from tensorflow.keras import utils
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from random import shuffle
+import matplotlib.pyplot as plt
 import numpy as np
 
 import re, os, sys, argparse, pickle, progressbar
@@ -21,11 +20,11 @@ HIDDEN_UNITS = 12 # number of LSTM cells - formula: N_h = N_s / (alpha * (N_i + 
 LEARNING_RATE = 0.001
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
-OPTIMIZER = 'rmsprop'
+OPTIMIZER = 'adam'
 
 # Training constants
 START_EPOCH = 0
-EPOCHS = 256
+EPOCHS = 100
 
 dataset = None
 model = None
@@ -59,6 +58,7 @@ def init_model(load_last=False):
             return_sequences = False,
             stateful = True,
             name='LSTM'))
+        model.add(Dropout(0.3))
         model.add(Dense(CHORD_CLASSES, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
         model.compile(optimizer=OPTIMIZER, loss=LOSS, metrics=['acc', 'mae'])
 
@@ -131,7 +131,28 @@ def train_model_cv():
 def train_model():
     print('Training...')
 
-    train_set, test_set = split_dataset(0.8)
+    training_loss = []
+    training_acc = []
+    testing_loss = []
+    testing_acc = []
+
+    # init plots
+    plt.ion()
+    fig = plt.figure()
+    fig.suptitle(f'Metrics (epochs: {EPOCHS}, block size: {CHORDS_BLOCK})')
+    fig.canvas.set_window_title('Metrics')
+    # loss plot
+    ax_train_loss = fig.add_subplot(2, 1, 1)
+    ax_test_loss = fig.add_subplot(2, 1, 1)
+    plt.ylabel('loss')
+    train_labels_set = False
+    # accuracy plot
+    ax_train_acc = fig.add_subplot(2, 1, 2)
+    ax_test_acc = fig.add_subplot(2, 1, 2)
+    plt.ylabel('accuracy')
+    test_labels_set = False
+
+    train_set, test_set = split_dataset(0.7)
     for e in range(START_EPOCH + 1, EPOCHS + 1):
         print(f'\nEpoch {e}/{EPOCHS}')
         tot_epoch_loss = 0
@@ -159,14 +180,46 @@ def train_model():
             tot_epoch_acc += stats.history['acc'][0]
             tot_epoch_mae += stats.history['mae'][0]
 
+        training_loss.append(tot_epoch_loss/len(train_set))
+        training_acc.append(tot_epoch_acc/len(train_set))
+
         print(f'\nACCURACY: {tot_epoch_acc/len(train_set)} | LOSS: {tot_epoch_loss/len(train_set)} | MAE: {tot_epoch_mae/len(train_set)}')
 
+        # dinamically update plots
+        if train_labels_set:
+            ax_train_loss.plot(range(0, len(training_loss)), training_loss, color='#eb3434', marker='o')
+            ax_train_acc.plot(range(0, len(training_acc)), training_acc, color='#3434eb', marker='o')
+        else:
+            ax_train_loss.plot(range(0, len(training_loss)), training_loss, color='#eb3434', marker='o', label='train')
+            ax_train_acc.plot(range(0, len(training_acc)), training_acc, color='#3434eb', marker='o', label='train')
+            train_labels_set = True
+        ax_train_loss.legend()
+        ax_train_acc.legend()
+
         # Test and backup model every epoch
-        test_model(test_set)
+        t_loss, t_acc = test_model(test_set)
+        testing_loss.append(t_loss)
+        testing_acc.append(t_acc)
+
+        if test_labels_set:
+            ax_test_loss.plot(range(0, len(testing_loss)), testing_loss, color='#ff7070', marker='o')
+            ax_test_acc.plot(range(0, len(testing_acc)), testing_acc, color='#7070ff', marker='o')
+        else:
+            ax_test_loss.plot(range(0, len(testing_loss)), testing_loss, color='#ffb0b0', marker='o', label='test')
+            ax_test_acc.plot(range(0, len(testing_acc)), testing_acc, color='#b0b0ff', marker='o', label='test')
+            test_labels_set = True
+        ax_test_loss.legend()
+        ax_test_acc.legend()
+
+        plt.pause(2)
+        plt.draw()
 
         if not os.path.exists('model_backups'):
             os.makedirs('model_backups')
         model.save(os.path.join('model_backups', 'epoch_' + str(e) + '.h5'))
+
+    plt.show()
+    plt.savefig(f'metrics_{EPOCHS}_epochs_{CHORDS_BLOCK}_blocksize.png')
 
 def test_model(test_set):
     print('Testing...')
@@ -196,7 +249,11 @@ def test_model(test_set):
         tot_test_acc += stats[1]
         tot_test_mae += stats[2]
 
-    print(f'\nACCURACY: {tot_test_acc/len(test_set)} | LOSS: {tot_test_loss/len(test_set)} | MAE: {tot_test_mae/len(test_set)}')
+    t_loss = tot_test_loss/len(test_set)
+    t_acc = tot_test_acc/len(test_set)
+    print(f'\nACCURACY: {t_acc} | LOSS: {t_loss} | MAE: {tot_test_mae/len(test_set)}')
+
+    return t_loss, t_acc
 
 def performance_eval(test_sequences):
     compute_transition_matrix()
@@ -221,7 +278,7 @@ def compose_song(first_chords, num_predictions):
 
     tot_chords = first_chords
     for i in range(num_predictions):
-        last_chords = np.array([tot_chords[-4:]])
+        last_chords = np.array([tot_chords[-CHORDS_BLOCK:]])
         data = last_chords if EMBEDDING else np.reshape(last_chords, (last_chords.shape[0], CHORDS_BLOCK, 1))
         prediction = model.predict(data)
         predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in prediction][0][0]
@@ -263,7 +320,8 @@ if __name__ == '__main__':
     parser.add_argument('--data', metavar = 'D', type = str, default = 'output_sequences.p', help = 'Specify the pickle file with chords sequences for each song. [default: output_sequences.p]')
     parser.add_argument('--embedding', metavar = 'E', type = int, default = 0, help = 'Adds an embedding layer with the specified dimension. [default: 0 (no embedding)]')
     parser.add_argument('--block', metavar = 'B', type = int, default = 4, help = 'Chord sequence size. [default: 4]')
-    parser.add_argument('--epochs', metavar = 'e', type = int, default = 256, help = 'Epoch on which the network will be trained. [default: 256]')
+    parser.add_argument('--epochs', metavar = 'e', type = int, default = 100, help = 'Epoch on which the network will be trained. [default: 100]')
+    parser.add_argument('--optimizer', metavar = 'o', type = str, default = 'adam', help = 'Keras compiler\'s optimizer. [default: adam]')
     args = parser.parse_args()
 
     try:
@@ -298,11 +356,13 @@ if __name__ == '__main__':
         print('Type \'python chord-generation.py -h\' to get more information.')
         exit(0)
 
+    OPTIMIZER = args.optimizer
+
     #Build and train model
-    init_model(load_last=True)
+    init_model()
     # train_model_cv()
     train_model()
 
     #Model evaluation
-    performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
-    compose_song([7, 2, 21, 0], 16)
+    # performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
+    compose_song([7, 2, 21, 0, 7, 2, 21, 0], 16)
