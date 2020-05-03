@@ -13,6 +13,9 @@ PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 FUNDAMENTALS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 MODES = ['major', 'minor']
 
+MAJOR_PRIORITY = [7,0,21,5,14,16,12,19,23,17,1,9,4,11,2,10,22,8,3,6,13,20,15,18]
+MINOR_PRIORITY = [21,7,0,5,14,4,16,12,19,23,17,1,9,11,2,10,22,8,3,6,13,20,15,18]
+
 #Utility, given a chord id returns its common name
 def id_to_chord_name(chord_id):
     if chord_id >= CHORD_CLASSES:
@@ -21,6 +24,11 @@ def id_to_chord_name(chord_id):
         return 'No chord'
     m, f = divmod(chord_id, PITCH_CLASSES)
     return f'{FUNDAMENTALS[f]} {MODES[m]}'
+
+def permute_list(list, permutation_map):
+    if len(list) != len(permutation_map):
+        return list
+    return [list[i] for i in permutation_map]
 
 #Returns whether a histogram is empty (a.k.a. uninitialized)
 def histogram_is_empty(histogram):
@@ -47,7 +55,7 @@ def make_chord_histograms():
             chord_pitches = [fundamental, (fundamental + 3) % PITCH_CLASSES, (fundamental + 7) % PITCH_CLASSES] #minor third
         histogram = [1 if n in chord_pitches else 0 for n in range(PITCH_CLASSES)]
         chord_histograms.append(normalize_histogram(histogram))
-    return chord_histograms
+    return list(enumerate(chord_histograms))
 
 #Returns the bhattacharyya distance between two histograms or 1000 if the two histograms do not overlap
 #The two histograms involved must have the same number of bins
@@ -64,12 +72,12 @@ def bhattacharyya_distance(h1, h2):
 #All the histograms involved must have the same number of bins
 def find_closest_histogram(chord_histograms, target_histogram):
     #simply an argmax
-    best = 0
-    min_distance = bhattacharyya_distance(chord_histograms[0],target_histogram)
-    for i, histogram in enumerate(chord_histograms):
+    best = chord_histograms[0][0]
+    min_distance = bhattacharyya_distance(chord_histograms[0][1],target_histogram) #chord_histograms contains (id,histogram) tuples
+    for id, histogram in chord_histograms:
         distance = bhattacharyya_distance(histogram, target_histogram)
         if distance < min_distance:
-            best = i
+            best = id
             min_distance = distance
     return best
 
@@ -133,10 +141,17 @@ if __name__ == "__main__":
 
     num_of_files = len(files)
 
+    errors = 0
     for i,f in enumerate(files):
         print(f'\n({i+1}/{num_of_files}):{f}')
         print('Opening file...')
-        mid = converter.parse(f)
+        try:
+            mid = converter.parse(f)
+        except:
+            errors += 1
+            continue
+        key = mid.analyze('key')
+        print(f'Song is in {key}')
         print('Preprocessing song... (this may take a while)')
         indesiderata = [element for element in mid.recurse(classFilter=('Instrument','MetronomeMark'))]
         #instruments = [instrument for instrument in mid.getInstruments(recurse=True)]
@@ -160,11 +175,14 @@ if __name__ == "__main__":
                 chord = NO_CHORD
             else:
                 pch = normalize_histogram(pch)
-                chord = find_closest_histogram(chord_histograms, pch)
+                chord_priority = MAJOR_PRIORITY if key.mode == 'major' else MINOR_PRIORITY
+                #chord = find_closest_histogram(chord_histograms, pch)
+                chord = find_closest_histogram(permute_list(chord_histograms, chord_priority), pch)
 
             output_sequence.append(chord)
             print(f'Measure {i+1}: {id_to_chord_name(chord)}')
 
         output_sequences.append(output_sequence)
 
+    print(f'Pickling chords of {num_of_files-errors} out of {num_of_files} files...')
     pickle.dump( output_sequences, open( "output_sequences.p", "wb" ) )
