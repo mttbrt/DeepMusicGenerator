@@ -15,13 +15,13 @@ CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
 
 def one_hot_encode_chord(chord_id):
-    return np.array([1 if i == chord_id else 0 for i in range(CHORD_CLASSES)])
+    return [1 if i == chord_id else 0 for i in range(CHORD_CLASSES)]
 
 
 def init_model(chord_block_size):
     global model
     model = Sequential(name = 'lstm-chord-generator')
-    model.add(LSTM(256, dropout=0.1, input_shape = (chord_block_size, CHORD_CLASSES), name='LSTM1'))
+    model.add(LSTM(256, dropout=0.1, input_shape = (chord_block_size, CHORD_CLASSES+1), name='LSTM1'))
     model.add(Dense(CHORD_CLASSES, activation='softmax'))
 
     optimizer = RMSprop(learning_rate=0.01)
@@ -35,8 +35,9 @@ def preprocess(dataset, chord_block_size):
     one_hot_encoded_dataset = []
     for song in dataset:
         one_hot_encoded_song = []
-        for chord in song:
-            one_hot_encoded_song.append(one_hot_encode_chord(chord))
+        song_length = len(song)
+        for i, chord in enumerate(song):
+            one_hot_encoded_song.append([i/song_length] + one_hot_encode_chord(chord))
         one_hot_encoded_dataset.append(one_hot_encoded_song)
 
     #Create feature-target pairs
@@ -45,7 +46,7 @@ def preprocess(dataset, chord_block_size):
     for sequence in one_hot_encoded_dataset:
         for i in range(1, len(sequence) - (chord_block_size + 1)):
             X.append(sequence[i:i+chord_block_size])
-            Y.append(sequence[i+chord_block_size])
+            Y.append(sequence[i+chord_block_size][1:])
     X = np.array(X)
     Y= np.array(Y)
 
@@ -73,18 +74,23 @@ def split_validation(X, Y, split):
     return X_train, Y_train, X_val, Y_val
 
 
-def make_song(model, seed, length):
+def make_song(model, seed, length, location=False):
     song = seed
     block_length = len(seed)
-    window = song[-block_length:]
+    index_window = list(range(block_length))
 
-    for i in range(length):
-        sample = np.array([[one_hot_encode_chord(chord) for chord in window]])
+    for i in range(length-block_length):
+        if location:
+            sample = np.array([[[i/length]+one_hot_encode_chord(song[i]) for i in index_window]])
+        else:
+            sample = np.array([[one_hot_encode_chord(song[i]) for i in index_window]])
+
         new_chord = model.predict_classes(sample)[0]
         
         song.append(new_chord)
-        window = song[-block_length:]
+        index_window = index_window[1:]+[index_window[-1]+1]
 
+    print(len(song))
     return song
 
 
@@ -143,5 +149,5 @@ if __name__ == '__main__':
     plt.legend(['Train', 'Test'], loc='upper left')
     plt.show()
 
-    song = make_song(model, [21, 7, 0, 5], 100)
+    song = make_song(model, [21, 21, 7, 7, 0, 0, 5, 5], 180, location=True)
     print(song)
