@@ -1,8 +1,0 @@
-*.mid
-*.midi
-*.p
-
-raw_midi/
-.vscode/
-venv/
-chord-generation/
