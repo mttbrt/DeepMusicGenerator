@@ -185,4 +185,4 @@ if __name__ == "__main__":
         output_sequences.append(output_sequence)
 
     print(f'Pickling chords of {num_of_files-errors} out of {num_of_files} files...')
-    pickle.dump( output_sequences, open( "output_sequences.p", "wb" ) )
+    pickle.dump( output_sequences, open( "chord_sequences.p", "wb" ) )

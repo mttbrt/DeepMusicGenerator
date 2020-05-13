@@ -14,7 +14,9 @@ import matplotlib.pyplot as plt
 CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
 
-def one_hot_encode_chord(chord_id):
+def one_hot_encode_chord(chord_id): #TODO: move this logic to chord extraction
+    if chord_id >= CHORD_CLASSES:
+        raise ValueError(f'Chord id must be between 0 and {CHORD_CLASSES}. Found {chord_id}')
     return [1 if i == chord_id else 0 for i in range(CHORD_CLASSES)]
 
 
