@@ -1,4 +1,5 @@
 from music21 import converter, note, chord
+from music21.duration import Duration
 from music21.stream import Stream
 from music21.instrument import UnpitchedPercussion
 from math import sqrt, log, inf
@@ -11,6 +12,10 @@ NOTE_CLASSES = NO_NOTE+1 # 88 notes of the piano and "no note"
 PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 MIDI_LOWEST = 21 # Lowest midi note taken into consideration: A0
 MIDI_HIGHEST = 108 # Highest midi note taken into consideration: C8
+
+FUNDAMENTALS = ['C', 'C#', 'D', 'E-', 'E', 'F', 'F#', 'G', 'A-', 'A', 'B-', 'B']
+MAJOR_PRIORITY = [7,0,21,5,14,16,12,19,23,17,1,9,4,11,2,10,22,8,3,6,13,20,15,18]
+MINOR_PRIORITY = [21,7,0,5,14,4,16,12,19,23,17,1,9,11,2,10,22,8,3,6,13,20,15,18]
 
 def one_hot_encode_note(note_midi_id):
     if note_midi_id == None:
@@ -135,26 +140,37 @@ if __name__ == "__main__":
                 eighths = int(c.duration.quarterLength / 0.5)
                 # repeat the occurrence of the chord as many times as eighths it plays
                 for eighth in range(eighths):
-                    # take three highest pitches
-                    highest_pitches = c.pitches[-3:] if len(c.pitches) > 3 else c.pitches
-                    # compute closest chord given the three highest pitches
-                    pch = [.0 for _ in range(PITCH_CLASSES)]
-                    for p in highest_pitches:
-                        pch[p.pitchClass] = 0.5
+                    # Version with 3 highest pitches
+                    # # take three highest pitches
+                    # highest_pitches = c.pitches[-3:] if len(c.pitches) > 3 else c.pitches
+                    # # compute closest chord given the three highest pitches
+                    # pch = [.0 for _ in range(PITCH_CLASSES)]
+                    # for p in highest_pitches:
+                    #     pch[p.pitchClass] = 0.5
+                    #
+                    # if histogram_is_empty(pch):
+                    #     chord = NO_CHORD
+                    # else:
+                    #     pch = normalize_histogram(pch)
+                    #     chord_priority = MAJOR_PRIORITY if key.mode == 'major' else MINOR_PRIORITY
+                    #     chord = find_closest_histogram(permute_list(chord_histograms, chord_priority), pch)
+                    #
+                    # mjr_chord = chord - PITCH_CLASSES if chord >= PITCH_CLASSES else chord
 
-                    if histogram_is_empty(pch):
-                        chord = NO_CHORD
-                    else:
-                        pch = normalize_histogram(pch)
-                        chord_priority = [7,0,21,5,14,16,12,19,23,17,1,9,4,11,2,10,22,8,3,6,13,20,15,18]
-                        chord = find_closest_histogram(permute_list(chord_histograms, chord_priority), pch)
-
-                    output_sequence.append(chord)
+                    # Version with highest pitch
+                    mjr_chord = c.pitches[-1].nameWithOctave if len(c.pitches) > 0 else NO_NOTE
+                    output_sequence.append(mjr_chord)
 
             print('|', end=' ')
-            print(' - '.join(str(x) for x in output_sequence[-8:]), end=' |\n\n')
+            print(' - '.join(x for x in output_sequence[-8:]), end=' |\n\n')
 
         output_sequences.append(output_sequence)
+
+        # DEBUG: create and save midi
+        s = Stream()
+        for n in output_sequence:
+            s.append(note.Note(n, duration=Duration(0.5)))
+        s.write('midi', fp=f.split('/')[-1])
 
     print(f'Pickling chords of {num_of_files-errors} out of {num_of_files} files...')
     pickle.dump( output_sequences, open( "melody_sequences.p", "wb" ) )
