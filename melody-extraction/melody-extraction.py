@@ -10,11 +10,11 @@ from itertools import accumulate
 import os, sys, glob, pickle, copy
 
 REST = 0
-NO_NOTE = 88
-NOTE_CLASSES = NO_NOTE+1 # 88 notes of the piano and "no note"
-PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 MIDI_LOWEST = 21 # Lowest midi note taken into consideration: A0
 MIDI_HIGHEST = 108 # Highest midi note taken into consideration: C8
+MIDI_NOTES = MIDI_HIGHEST - MIDI_LOWEST + 1
+NOTE_CLASSES = MIDI_NOTES + 1 # 88 notes of the piano and rest
+PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 
 if __name__ == "__main__":
     inputs = sys.argv[1:]
@@ -105,8 +105,8 @@ if __name__ == "__main__":
 
         for nt in output_seq:
             eighth_durations.append(nt.duration.quarterLength)
-            # eighth_notes.append([REST] if nt.isRest else [n.pitch.midi for n in nt.notes if (n.pitch.midi >= MIDI_LOWEST and n.pitch.midi <= MIDI_HIGHEST)])
-            eighth_notes.append([REST] if nt.isRest else [n.pitch.nameWithOctave for n in nt.notes])
+            eighth_notes.append([REST] if nt.isRest else [n.pitch.midi for n in nt.notes if (n.pitch.midi >= MIDI_LOWEST and n.pitch.midi <= MIDI_HIGHEST)])
+            # eighth_notes.append([REST] if nt.isRest else [n.pitch.nameWithOctave for n in nt.notes]) # DEBUGGING
 
             if sum(eighth_durations) == 0.5:
                 # mappo ogni nota con il totale del tempo che suona all'interno dell'ottava
@@ -129,23 +129,26 @@ if __name__ == "__main__":
                 if len(actual_eighth) > 1:
                     actual_eighth = [x for x in actual_eighth if x != REST]
 
+                # metto le note di ogni ottava nel range [0, 88]
+                normalized = [(x - (MIDI_LOWEST - 1) if x != REST else x) for x in actual_eighth]
+                piano_roll = [(1 if v in normalized else 0) for v in range(NOTE_CLASSES)]
+
                 output_sequence.append(actual_eighth)
-                # print(output_sequence[-5:])
 
         output_sequences.append(output_sequence)
 
         # DEBUG: create and save midi
-        s = Stream()
-        for i, n in enumerate(output_sequence):
-            if len(n) == 1:
-                if n[0] == 0:
-                    s.append(note.Rest(duration=Duration(0.5)))
-                else:
-                    s.append(note.Note(n[0], duration=Duration(0.5)))
-            else:
-                s.append(chord.Chord(n, duration=Duration(0.5)))
-            # s.append(note.Note(n, duration=output_duration[i]))
-        s.write('midi', fp='melodies/' + f.split('/')[-1])
+        # s = Stream()
+        # for i, n in enumerate(output_sequence):
+        #     if len(n) == 1:
+        #         if n[0] == 0:
+        #             s.append(note.Rest(duration=Duration(0.5)))
+        #         else:
+        #             s.append(note.Note(n[0], duration=Duration(0.5)))
+        #     else:
+        #         s.append(chord.Chord(n, duration=Duration(0.5)))
+        #     # s.append(note.Note(n, duration=output_duration[i]))
+        # s.write('midi', fp='melodies/' + f.split('/')[-1])
 
     print(f'Pickling chords of {num_of_files-errors} out of {num_of_files} files...')
     pickle.dump( output_sequences, open("melody_sequences.p", "wb"))
