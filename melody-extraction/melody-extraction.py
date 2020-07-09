@@ -1,24 +1,20 @@
+# lower note 24 - higher note 127
+
 from music21 import converter, note, chord
+from music21.duration import Duration
 from music21.stream import Stream
 from music21.instrument import UnpitchedPercussion
 from math import sqrt, log, inf
 from itertools import accumulate
 
-import os, sys, glob, pickle
+import os, sys, glob, pickle, copy
 
-NOTE_CLASSES = 88+1 # 88 notes of the piano and "no note"
+REST = 0
 MIDI_LOWEST = 21 # Lowest midi note taken into consideration: A0
 MIDI_HIGHEST = 108 # Highest midi note taken into consideration: C8
-NO_NOTE = 88
-
-def one_hot_encode_note(note_midi_id):
-    if note_midi_id == None:
-        id = NO_NOTE
-    else:
-        id = note_midi_id - MIDI_LOWEST
-    if id >= NOTE_CLASSES:
-        raise ValueError(f'Note id must be None or between {MIDI_LOWEST} and {MIDI_HIGHEST}. Found {note_midi_id}')
-    return [1 if i == id else 0 for i in range(NOTE_CLASSES)]
+MIDI_NOTES = MIDI_HIGHEST - MIDI_LOWEST + 1
+NOTE_CLASSES = MIDI_NOTES + 1 # 88 notes of the piano and rest
+PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 
 if __name__ == "__main__":
     inputs = sys.argv[1:]
@@ -35,6 +31,7 @@ if __name__ == "__main__":
             files.append(input)
         elif os.path.isdir(input):
             for (dirpath, dirnames, filenames) in os.walk(input):
+                filenames.sort()
                 for file in filenames:
                     if file.lower().endswith('.mid') or file.lower().endswith('.midi'):
                         files.append(os.path.join(dirpath, file))
@@ -42,6 +39,10 @@ if __name__ == "__main__":
             print(f'Warning: {input} is neither a midi file nor a directory.')
 
     num_of_files = len(files)
+
+    if num_of_files == 0:
+        print('No midi file found.')
+        sys.exit(0)
 
     errors = 0
     for i,f in enumerate(files):
@@ -56,35 +57,98 @@ if __name__ == "__main__":
         print(f'Song is in {key}')
         print('Preprocessing song... (this may take a while)')
         indesiderata = [element for element in mid.recurse(classFilter=('Instrument','MetronomeMark'))]
-        #instruments = [instrument for instrument in mid.getInstruments(recurse=True)]
         mid.remove(indesiderata, recurse=True)
 
         measures = mid.chordify(addTies=False).measures(0,-1,indicesNotNumbers=True)
         print('Done.\n')
 
-        #measures.write(fp='debug.mid',fmt='mid') #debug
+        output_seq = []
+        eighth_current_size = 0.0
 
+        def append_note(nt):
+            global eighth_current_size
+            empty_space = 0.5 - eighth_current_size
 
-        output_sequence = []
+            if nt.duration.quarterLength > empty_space:
+                # creo una nota (o rest) da 0.5 e la aggiungo alla sequenza
+                val = copy.deepcopy(nt)
+                val.duration.quarterLength = empty_space
+                output_seq.append(val)
 
-        for i, measure in enumerate(measures):
-            pch = [.0 for _ in range(PITCH_CLASSES)]
-            for c in measure.notes:
-                for p in c.pitches:
-                    pch[p.pitchClass] += c.duration.quarterLength
+                eighth_current_size = 0.0
 
-            if histogram_is_empty(pch):
-                chord = NO_CHORD
+                # la porzione rimanente di nota (o rest) viene messa nel buffer
+                buffer = copy.deepcopy(nt)
+                buffer.duration.quarterLength -= empty_space
             else:
-                pch = normalize_histogram(pch)
-                chord_priority = MAJOR_PRIORITY if key.mode == 'major' else MINOR_PRIORITY
-                #chord = find_closest_histogram(chord_histograms, pch)
-                chord = find_closest_histogram(permute_list(chord_histograms, chord_priority), pch)
+                # aggiungo la nota (o rest) alla sequenza
+                output_seq.append(nt)
+                buffer = None
 
-            output_sequence.append(chord)
-            print(f'Measure {i+1}: {id_to_chord_name(chord)}')
+                eighth_current_size += nt.duration.quarterLength
+                if eighth_current_size == 0.5:
+                    eighth_current_size = 0.0
+
+            return buffer
+
+        # preprocessing
+        for i, measure in enumerate(measures):
+            for c in measure.notesAndRests:
+                buff = append_note(c)
+                while buff != None:
+                    buff = append_note(buff)
+
+        # ottengo blocchi di 0.5 uniformi (non pezzi di lunghezze diverse < 0.5)
+        output_sequence = []
+        eighth_durations = []
+        eighth_notes = []
+
+        for nt in output_seq:
+            eighth_durations.append(nt.duration.quarterLength)
+            eighth_notes.append([REST] if nt.isRest else [n.pitch.midi for n in nt.notes if (n.pitch.midi >= MIDI_LOWEST and n.pitch.midi <= MIDI_HIGHEST)])
+            # eighth_notes.append([REST] if nt.isRest else [n.pitch.nameWithOctave for n in nt.notes]) # DEBUGGING
+
+            if sum(eighth_durations) == 0.5:
+                # mappo ogni nota con il totale del tempo che suona all'interno dell'ottava
+                notes_and_durations = {}
+                for i, a in enumerate(eighth_notes):
+                    for e in a:
+                        if e in notes_and_durations:
+                            notes_and_durations[e] += eighth_durations[i]
+                        else:
+                            notes_and_durations[e] = eighth_durations[i]
+
+                # reset
+                eighth_durations = []
+                eighth_notes = []
+
+                # costruisco l'ottava con le note che suonano almeno mezza ottava
+                actual_eighth = [nd for nd in notes_and_durations if notes_and_durations[nd] >= 0.25]
+
+                # rimuovo le pause se ci sono già altre note che suonano nell'ottava
+                if len(actual_eighth) > 1:
+                    actual_eighth = [x for x in actual_eighth if x != REST]
+
+                # metto le note di ogni ottava nel range [0, 88]
+                normalized = [(x - (MIDI_LOWEST - 1) if x != REST else x) for x in actual_eighth]
+                piano_roll = [(1 if v in normalized else 0) for v in range(NOTE_CLASSES)]
+
+                output_sequence.append(actual_eighth)
 
         output_sequences.append(output_sequence)
 
+        # DEBUG: create and save midi
+        # s = Stream()
+        # for i, n in enumerate(output_sequence):
+        #     if len(n) == 1:
+        #         if n[0] == 0:
+        #             s.append(note.Rest(duration=Duration(0.5)))
+        #         else:
+        #             s.append(note.Note(n[0], duration=Duration(0.5)))
+        #     else:
+        #         s.append(chord.Chord(n, duration=Duration(0.5)))
+        #     # s.append(note.Note(n, duration=output_duration[i]))
+        # s.write('midi', fp='melodies/' + f.split('/')[-1])
+
     print(f'Pickling chords of {num_of_files-errors} out of {num_of_files} files...')
-    pickle.dump( output_sequences, open( "melody_sequences.p", "wb" ) )
+    pickle.dump( output_sequences, open("melody_sequences.p", "wb"))
