@@ -11,18 +11,23 @@ MIDI_LOWEST = 21 # Lowest midi note taken into consideration: A0
 MIDI_HIGHEST = 108 # Highest midi note taken into consideration: C8
 MIDI_NOTES = MIDI_HIGHEST - MIDI_LOWEST + 1
 NOTE_CLASSES = MIDI_NOTES + 1 # 88 notes of the piano and rest
+CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
+INPUT_SIZE = NOTE_CLASSES + CHORD_CLASSES + CHORD_CLASSES
 
 EPOCHS = 0
 START_EPOCH = 0
 HIDDEN_UNITS = 12 # number of LSTM cells - formula: N_h = N_s / (alpha * (N_i + N_o))
 BATCH_SIZE = 1 # how many sequences to process in parallel
 NOTES_BLOCK = 4 # how many notes pass to the network every time
-EMBEDDING_SIZE = NOTE_CLASSES # size of embedding vector
+EMBEDDING_SIZE = INPUT_SIZE # size of embedding vector
 ACTIVATION = 'softmax'
 LOSS = 'categorical_crossentropy'
 OPTIMIZER = 'adam'
 
+predicted_chords = None
 dataset = None
+input_vectors = []
+
 model = None
 
 def init_model(load_last=False):
@@ -46,7 +51,7 @@ def init_model(load_last=False):
                         stateful = True,
                         name='LSTM'))
         model.add(Dropout(0.3))
-        model.add(Dense(NOTE_CLASSES, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
+        model.add(Dense(INPUT_SIZE, name=f'Dense_{ACTIVATION}', activation=ACTIVATION))
         model.compile(optimizer=OPTIMIZER, loss=LOSS, metrics=['acc', 'mae'])
 
     print(model.summary())
@@ -54,8 +59,8 @@ def init_model(load_last=False):
 def train_model():
     print('Training...')
 
-    shuffle(dataset)
-    train_set, test_set = dataset[:int(len(dataset)*0.7)], dataset[int(len(dataset)*0.7):]
+    shuffle(input_vectors)
+    train_set, test_set = input_vectors[:int(len(input_vectors)*0.7)], input_vectors[int(len(input_vectors)*0.7):]
     for e in range(START_EPOCH + 1, EPOCHS + 1):
         print(f'\nEpoch {e}/{EPOCHS}')
         tot_epoch_loss = 0
@@ -71,9 +76,11 @@ def train_model():
             for i in range(len(song) - NOTES_BLOCK - 1):
                 xdata.append(song[i:i+NOTES_BLOCK])
                 ydata.append(song[i+NOTES_BLOCK])
+            xdata = np.array(xdata)
 
-            X = np.array(xdata)
+            X = np.array(xdata) #np.reshape(xdata, (xdata.shape[0], NOTES_BLOCK, 1))
             Y = np.array(ydata)
+
             stats = model.fit(X, Y, batch_size = BATCH_SIZE, shuffle = False, verbose = False)
             model.reset_states()
             prog_bar.update(j+1)
@@ -114,13 +121,25 @@ if __name__ == '__main__':
         for j, eighth in enumerate(song):
             # translate notes in each eighth in range [0, 88]
             translated = [(note - (MIDI_LOWEST - 1) if note != REST else note) for note in eighth]
-            # one-hot encoded piano roll
-            piano_roll = [(1 if v in translated else 0) for v in range(NOTE_CLASSES)]
-            dataset[i][j] = piano_roll
+            # one-hot encode melody eighth ones
+            dataset[i][j] = [(1 if v in translated else 0) for v in range(NOTE_CLASSES)]
 
-    # TODO controllare se nel pickle degli accordi ci sono anche le pause, in caso contrario metterle.
-    # legere anche pickle degli accordi e formare il vettore finale come svizzeri
+    # one-hot encode predicted chords
+    predicted_chords = pickle.load(open('predicted_chords.p', 'rb'))
+    for i, chord in enumerate(predicted_chords):
+        predicted_chords[i] = [(1 if v == chord else 0) for v in range(CHORD_CLASSES)]
 
-    #Build and train model
+    # create vectors with melody, current chord and next chord.
+    for i, song in enumerate(dataset):
+        song_vectors = []
+        for j, eighth in enumerate(song):
+            measure = int(j/8)
+            if len(predicted_chords) > measure + 1:
+                eighth.extend(predicted_chords[measure])
+                eighth.extend(predicted_chords[measure + 1])
+                song_vectors.append(eighth)
+        input_vectors.append(song_vectors)
+
+    # Build and train model
     init_model()
     train_model()

@@ -284,6 +284,8 @@ def compose_song(first_chords, num_predictions):
         predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in prediction][0][0]
         tot_chords.append(predicted_chord)
 
+    pickle.dump( tot_chords, open( "predicted_chords.p", "wb" ) )
+
     CHORDS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'Abm', 'Am', 'Bbm', 'Bm', 'No Chord']
     for chord in tot_chords:
         print(CHORDS[chord], end = ' ')
@@ -317,7 +319,7 @@ def compute_transition_matrix():
 if __name__ == '__main__':
     # Parse command line arguments
     parser = argparse.ArgumentParser(description = 'Train chord generation model.')
-    parser.add_argument('--data', metavar = 'D', type = str, default = 'output_sequences.p', help = 'Specify the pickle file with chords sequences for each song. [default: output_sequences.p]')
+    parser.add_argument('--data', metavar = 'D', type = str, default = 'chord_sequences.p', help = 'Specify the pickle file with chords sequences for each song. [default: chord_sequences.p]')
     parser.add_argument('--embedding', metavar = 'E', type = int, default = 0, help = 'Adds an embedding layer with the specified dimension. [default: 0 (no embedding)]')
     parser.add_argument('--block', metavar = 'B', type = int, default = 4, help = 'Chord sequence size. [default: 4]')
     parser.add_argument('--epochs', metavar = 'e', type = int, default = 100, help = 'Epoch on which the network will be trained. [default: 100]')
@@ -325,7 +327,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-    	#input is expected to be a pickling of a 2-dimensional python list so that raw_data[i][j] is the j-th chord of the i-th song
+    	# input is expected to be a pickling of a 2-dimensional python list so that raw_data[i][j] is the j-th chord of the i-th song
         dataset = pickle.load(open(args.data, 'rb'))
     except:
         print('Specified file does not exists.')
@@ -358,11 +360,11 @@ if __name__ == '__main__':
 
     OPTIMIZER = args.optimizer
 
-    #Build and train model
+    # Build and train model
     init_model()
     # train_model_cv()
     train_model()
 
-    #Model evaluation
+    # Model evaluation
     # performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
     compose_song([7, 2, 21, 0, 7, 2, 21, 0], 16)
