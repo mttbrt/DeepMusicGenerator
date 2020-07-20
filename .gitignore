@@ -5,7 +5,6 @@
 raw_midi/
 .vscode/
 venv/
-chord-generation/
 
 *.pickle
 *.h5
