@@ -3,16 +3,17 @@
 *.p
 
 raw_midi/
-.vscode/
-venv/
-chord-generation/
+ca_midi/
+melody_midi/
 
 *.pickle
 *.h5
+*.png
 
-raw_midi/
-ca_midi/
-.vscode/
-venv/
 **/training_checkpoints
 **/model_backups
+**/model
+
+.vscode/
+venv/
+

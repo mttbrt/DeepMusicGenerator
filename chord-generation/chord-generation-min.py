@@ -75,6 +75,21 @@ def split_validation(X, Y, split):
     Y_val = np.array(Y_val)
     return X_train, Y_train, X_val, Y_val
 
+def sample_from(preds, temperature=1.0):
+    # helper function to sample an index from a probability array
+    preds = np.asarray(preds).astype("float64")
+    preds = np.log(preds) / temperature
+    exp_preds = np.exp(preds)
+    preds = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, preds, 1)
+    return np.argmax(probas)
+
+def get_temperature(i):
+    imod = i % 8
+    if imod == 0:
+        return 1.5
+    else:
+        return 0.1
 
 def make_song(model, seed, length, location=False):
     song = seed
@@ -87,7 +102,8 @@ def make_song(model, seed, length, location=False):
         else:
             sample = np.array([[one_hot_encode_chord(song[i]) for i in index_window]])
 
-        new_chord = model.predict_classes(sample)[0]
+        pred_dist = model.predict(sample)[0]
+        new_chord = sample_from(pred_dist, temperature=get_temperature(i))
         
         song.append(new_chord)
         index_window = index_window[1:]+[index_window[-1]+1]
@@ -100,15 +116,16 @@ if __name__ == '__main__':
     # Parse command line arguments
     parser = argparse.ArgumentParser(description = 'Train chord generation model.')
     parser.add_argument('--data', metavar = 'D', type = str, default = 'output_sequences.p', help = 'Specify the pickle file with chords sequences for each song. [default: output_sequences.p]')
-    parser.add_argument('--block', metavar = 'B', type = int, default = 4, help = 'Chord sequence size. [default: 4]')
+    parser.add_argument('--block', metavar = 'B', type = int, default = 8, help = 'Chord sequence size. [default: 4]')
     parser.add_argument('--epochs', metavar = 'e', type = int, default = 256, help = 'Epoch on which the network will be trained. [default: 256]')
+    parser.add_argument('--model', metavar= 'm', default = None, help = 'Load a pre-existing model')
     args = parser.parse_args()
 
     try:
     	#input is expected to be a pickling of a 2-dimensional python list so that raw_data[i][j] is the j-th chord of the i-th song
         dataset = pickle.load(open(args.data, 'rb'))
     except:
-        print('Specified file does not exists.')
+        print('Specified data file does not exists.')
         print('Type \'python chord-generation.py -h\' to get more information.')
         exit(0)
 
@@ -122,34 +139,45 @@ if __name__ == '__main__':
         print('Type \'python chord-generation.py -h\' to get more information.')
         exit(0)
 
-    #Build and train model
-    model = init_model(args.block)
-    print(model.summary())
+    if args.model != None:
+        try:
+            #Load existing model
+            model = load_model(args.model)
+            print('Successfully loaded model.')
+        except Exception as e:
+            print(e,'Specified model file does not exist.')
+            exit(0)
+    else:
+        #Build and train model
+        model = init_model(args.block)
+        print(model.summary())
 
-    print(f'Preprocessing {len(dataset)} chord sequences...')
-    X, Y = preprocess(dataset, args.block)
-    X_train, Y_train, X_val, Y_val = split_validation(X, Y, 0.2)
-    print(f'{len(X)} points available')
+        print(f'Preprocessing {len(dataset)} chord sequences...')
+        X, Y = preprocess(dataset, args.block)
+        X_train, Y_train, X_val, Y_val = split_validation(X, Y, 0.2)
+        print(f'{len(X)} points available')
 
-    history = model.fit(X_train, Y_train, batch_size=32, epochs=args.epochs, validation_data=(X_val, Y_val))
+        history = model.fit(X_train, Y_train, batch_size=32, epochs=args.epochs, validation_data=(X_val, Y_val))
 
-    # Plot training & validation accuracy values
-    plt.plot(history.history['acc'])
-    plt.plot(history.history['val_acc'])
-    plt.title('Model accuracy')
-    plt.ylabel('Accuracy')
-    plt.xlabel('Epoch')
-    plt.legend(['Train', 'Test'], loc='upper left')
-    plt.show()
+        # Plot training & validation accuracy values
+        plt.plot(history.history['acc'])
+        plt.plot(history.history['val_acc'])
+        plt.title('Model accuracy')
+        plt.ylabel('Accuracy')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.show()
 
-    # Plot training & validation loss values
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(['Train', 'Test'], loc='upper left')
-    plt.show()
+        # Plot training & validation loss values
+        plt.plot(history.history['loss'])
+        plt.plot(history.history['val_loss'])
+        plt.title('Model loss')
+        plt.ylabel('Loss')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.show()
+
+        model.save('./chord-generation/model')
 
     song = make_song(model, [21, 21, 7, 7, 0, 0, 5, 5], 180, location=True)
     print(song)

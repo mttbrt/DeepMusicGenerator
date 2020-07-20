@@ -7,7 +7,7 @@ from random import shuffle
 import matplotlib.pyplot as plt
 import numpy as np
 
-import re, os, sys, argparse, pickle, progressbar
+import re, os, sys, argparse, pickle, progressbar, glob
 
 CHORD_CLASSES = 24+1 # 12 major chords, 12 minor chords, and "no chord"
 
@@ -273,13 +273,14 @@ def performance_eval(test_sequences):
         print(f'Expected predictions: {transition_matrix[str_pred]}\n')
 
 def compose_song(first_chords, num_predictions):
-    last_backup = sorted(os.listdir('model_backups'), key=natural_keys)[-1]
-    model = load_model(os.path.join('model_backups', last_backup))
+    #last_backup = sorted(os.listdir('model_backups'), key=natural_keys)[-1]
+    #model = load_model(os.path.join('model_backups', last_backup))
 
+    block_size = model.layers[0].input_shape[1]
     tot_chords = first_chords
     for i in range(num_predictions):
-        last_chords = np.array([tot_chords[-CHORDS_BLOCK:]])
-        data = last_chords if EMBEDDING else np.reshape(last_chords, (last_chords.shape[0], CHORDS_BLOCK, 1))
+        last_chords = np.array([tot_chords[-block_size:]])
+        data = last_chords if EMBEDDING else np.reshape(last_chords, (last_chords.shape[0], block_size, 1))
         prediction = model.predict(data)
         predicted_chord = [list(np.where(pr == np.amax(pr))[0]) for pr in prediction][0][0]
         tot_chords.append(predicted_chord)
@@ -322,47 +323,55 @@ if __name__ == '__main__':
     parser.add_argument('--block', metavar = 'B', type = int, default = 4, help = 'Chord sequence size. [default: 4]')
     parser.add_argument('--epochs', metavar = 'e', type = int, default = 100, help = 'Epoch on which the network will be trained. [default: 100]')
     parser.add_argument('--optimizer', metavar = 'o', type = str, default = 'adam', help = 'Keras compiler\'s optimizer. [default: adam]')
+    parser.add_argument('--model', metavar='m', type=str, default=None, help= 'Use a pre-existing model for the generation')
     args = parser.parse_args()
 
-    try:
-    	#input is expected to be a pickling of a 2-dimensional python list so that raw_data[i][j] is the j-th chord of the i-th song
-        dataset = pickle.load(open(args.data, 'rb'))
-    except:
-        print('Specified file does not exists.')
-        print('Type \'python chord-generation.py -h\' to get more information.')
-        exit(0)
+    if args.model != None:  #We already have a model for generation, no need to train a new one
+        if args.model == 'latest':
+            list_of_files = glob.glob('./model_backups/*.h5')
+            model_to_load = max(list_of_files, key=os.path.getctime)
+        else:
+            model_to_load = args.model
+        model = load_model(model_to_load)
+    else:   #We don't have a model, need to train a new one
+        try:
+            #input is expected to be a pickling of a 2-dimensional python list so that raw_data[i][j] is the j-th chord of the i-th song
+            dataset = pickle.load(open(args.data, 'rb'))
+        except:
+            print('Specified file does not exists.')
+            print('Type \'python chord-generation.py -h\' to get more information.')
+            exit(0)
 
-    if args.embedding == 0:
-        EMBEDDING = False
-    elif args.embedding > 0:
-        EMBEDDING = True
-        EMBEDDING_SIZE = args.embedding
-    else:
-        print('Embedding size must be greater than 0.')
-        print('Type \'python chord-generation.py -h\' to get more information.')
-        exit(0)
+        if args.embedding == 0:
+            EMBEDDING = False
+        elif args.embedding > 0:
+            EMBEDDING = True
+            EMBEDDING_SIZE = args.embedding
+        else:
+            print('Embedding size must be greater than 0.')
+            print('Type \'python chord-generation.py -h\' to get more information.')
+            exit(0)
 
-    if args.block > 0:
-        CHORDS_BLOCK = args.block
-    else:
-        print('Number of chords in a block must be greater than 0.')
-        print('Type \'python chord-generation.py -h\' to get more information.')
-        exit(0)
+        if args.block > 0:
+            CHORDS_BLOCK = args.block
+        else:
+            print('Number of chords in a block must be greater than 0.')
+            print('Type \'python chord-generation.py -h\' to get more information.')
+            exit(0)
 
-    if args.epochs > 0:
-        EPOCHS = args.epochs
-    else:
-        print('Number of epochs must be greater than 0.')
-        print('Type \'python chord-generation.py -h\' to get more information.')
-        exit(0)
+        if args.epochs > 0:
+            EPOCHS = args.epochs
+        else:
+            print('Number of epochs must be greater than 0.')
+            print('Type \'python chord-generation.py -h\' to get more information.')
+            exit(0)
 
-    OPTIMIZER = args.optimizer
-
-    #Build and train model
-    init_model()
-    # train_model_cv()
-    train_model()
+        OPTIMIZER = args.optimizer
+        #Build and train model
+        init_model()
+        # train_model_cv()
+        train_model()
 
     #Model evaluation
     # performance_eval([[21, 5, 0, 16], [0, 16, 0, 16], [5, 7, 0, 21], [7, 2, 4, 0], [16, 5, 21, 7]])
-    compose_song([7, 2, 21, 0, 7, 2, 21, 0], 16)
+    compose_song([0, 0, 21, 21, 5, 5, 7, 7], 16)
