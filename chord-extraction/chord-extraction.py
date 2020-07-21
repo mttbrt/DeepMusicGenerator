@@ -7,7 +7,7 @@ from itertools import accumulate
 import os, sys, glob, pickle
 
 CHORD_CLASSES = 24+1 #12 major chords, 12 minor chords and "no chord"
-NO_CHORD = 24 
+NO_CHORD = 24
 
 PITCH_CLASSES = 12 #Using pitch classes that go from 0 (C) to 11 (B)
 FUNDAMENTALS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     num_of_files = len(files)
 
     errors = 0
-    for i,f in enumerate(files):
+    for i,f in enumerate(sorted(files)):
         print(f'\n({i+1}/{num_of_files}):{f}')
         print('Opening file...')
         try:

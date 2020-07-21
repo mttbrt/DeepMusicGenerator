@@ -45,7 +45,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     errors = 0
-    for i,f in enumerate(files):
+    for i,f in enumerate(sorted(files)):
         print(f'\n({i+1}/{num_of_files}):{f}')
         print('Opening file...')
         try:
